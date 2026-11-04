@@ -1,0 +1,17 @@
+{
+  "terminal.integrated.defaultProfile.linux": "bash",
+  "terminal.integrated.profiles.linux": {
+    "bash": {
+      "path": "/usr/bin/bash",
+      "icon": "terminal-bash"
+    },
+    "Steel REPL": {
+      "path": "/usr/bin/bash",
+      "args": ["-c", "cd ${workspaceFolder}/scripts && steel interactive mock_host.scm"],
+      "icon": "symbol-event"
+    }
+  },
+  "files.associations": {
+    "*.scm": "scheme"
+  }
+}

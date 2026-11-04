@@ -4,30 +4,22 @@
 ;; 1. 全局状态与脏标记（x, y 坐标，用于驱动画面移动）
 (define *visual-version* 0)
 
-;; 定义初始卡牌池
-(define (make-card id name icon type)
-  (hash "id" id "name" name "icon" icon "type" type))
+(define *next-card-id* 0)
 
-;; 初始4行卡槽，第0行放几个测试物品，其余行暂时为空列表 '()
+(define (make-card name icon type)
+  (set! *next-card-id* (+ *next-card-id* 1))
+  (hash "id" *next-card-id* "name" name "icon" icon "type" type))
+
 (define *lines*
   (list
-    (list (make-card 1 "村民" "🧑" "unit")
-          (make-card 2 "浆果" "🍎" "food")
-          (make-card 2 "浆果" "🍎" "food")
-          (make-card 2 "浆果" "🍎" "food")
-          (make-card 2 "浆果" "🍎" "food")
-          (make-card 2 "浆果" "🍎" "food")
-          (make-card 2 "浆果" "🍎" "food")
-          (make-card 2 "浆果" "🍎" "food")
-          (make-card 2 "浆果" "🍎" "food")
-          (make-card 2 "浆果" "🍎" "food")
-          (make-card 2 "浆果" "🍎" "food")
-          (make-card 3 "树木" "🌲" "resource"))
-    (list (make-card 4 "石头" "⛰️" "resource")
-          (make-card 2 "浆果" "🍎" "food")
-          (make-card 2 "浆果" "🍎" "food"))
-    (list)
-    (list)))
+    (list (make-card "村民" "🧑" "unit")
+          (make-card "浆果" "🍎" "food")
+          (make-card "树木" "🌲" "resource"))
+    (list (make-card "石头" "⛰️" "resource")
+          (make-card "浆果" "🍎" "food")
+          (make-card "浆果" "🍎" "food"))
+    '()
+    '()))
 
 
 (require "task0_render.scm")
@@ -57,4 +49,13 @@
       "cols" 80
       "rows" 24
       "screen" (render-all-lines *lines*)
-      "hud" (hash "hp" 100 "max_hp" 100 "gold" 888 "name" (string-append "Player_" (to-string pid))))))
+      "hud" (hash "hp" 100 "max_hp" 100 "gold" 888 "name" (string-append "Player_" (to-string pid)))))
+
+
+
+
+ (+ 1 2))
+ 
+
+ 
+
