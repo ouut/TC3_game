@@ -1,7 +1,173 @@
 [
+  // ====================================================================
+  // 【TextCraft / Scheme 终极直发快捷键系统 (Scheme 文件绝对高优先级)】
+  // 核心原则:
+  // 1. 彻底废除 Leader 两阶段，全部单发直达 (One-Shot)
+  // 2. 纯单手 Alt (Mac: Option) 锚定，100% 免疫浏览器拦截与系统热键冲突
+  // 3. 通过 editorLangId == 'scheme' 独占生效，绝对覆盖 VS Code 自带键位
+  // ====================================================================
+
+  // --------------------------------------------------------------------
+  // 1. REPL 实时发射求值 (Alt+Enter / Cmd+Enter / Ctrl+Enter)
+  // --------------------------------------------------------------------
   {
-    "key": "ctrl+enter",
+    "key": "alt+enter",
+    "mac": "alt+enter",
     "command": "workbench.action.terminal.runSelectedText",
     "when": "editorTextFocus && editorLangId == 'scheme'"
+  },
+  {
+    "key": "cmd+enter",
+    "mac": "cmd+enter",
+    "command": "workbench.action.terminal.runSelectedText",
+    "when": "editorTextFocus && editorLangId == 'scheme'"
+  },
+  {
+    "key": "ctrl+enter",
+    "mac": "ctrl+enter",
+    "command": "workbench.action.terminal.runSelectedText",
+    "when": "editorTextFocus && editorLangId == 'scheme'"
+  },
+
+  // --------------------------------------------------------------------
+  // 2. 选区扩张 / 收缩 / 顶层定义 (Alt + O / I / E)
+  // --------------------------------------------------------------------
+  // 向外扩选一层 S-Exp (Outward)
+  {
+    "key": "alt+o",
+    "mac": "alt+o",
+    "command": "paredit.sexpRangeExpansion",
+    "when": "editorTextFocus && editorLangId == 'scheme' && !editorReadOnly"
+  },
+  // 向内收缩一层选区 (Inward)
+  {
+    "key": "alt+i",
+    "mac": "alt+i",
+    "command": "paredit.sexpRangeContraction",
+    "when": "editorTextFocus && editorLangId == 'scheme' && !editorReadOnly"
+  },
+  // 选中最外层整个 define 函数定义 (Entire Defun)
+  {
+    "key": "alt+e",
+    "mac": "alt+e",
+    "command": "paredit.rangeForDefun",
+    "when": "editorTextFocus && editorLangId == 'scheme' && !editorReadOnly"
+  },
+
+  // --------------------------------------------------------------------
+  // 3. 括号包裹 (Alt + W / [)
+  // --------------------------------------------------------------------
+  // 用圆括号 () 包裹当前项/选区 (Wrap Parens)
+  {
+    "key": "alt+w",
+    "mac": "alt+w",
+    "command": "paredit.wrapAroundParens",
+    "when": "editorTextFocus && editorLangId == 'scheme' && !editorReadOnly"
+  },
+  // 用方括号 [] 包裹当前项/选区 (Wrap Square - 写 let / cond 必备)
+  {
+    "key": "alt+[",
+    "mac": "alt+[",
+    "command": "paredit.wrapAroundSquare",
+    "when": "editorTextFocus && editorLangId == 'scheme' && !editorReadOnly"
+  },
+
+  // --------------------------------------------------------------------
+  // 4. 语法树修剪 (Alt + K / J / S)
+  // --------------------------------------------------------------------
+  // 向右吞噬 (Slurp Forward): (a b) c -> (a b c)
+  {
+    "key": "alt+k",
+    "mac": "alt+k",
+    "command": "paredit.slurpSexpForward",
+    "when": "editorTextFocus && editorLangId == 'scheme' && !editorReadOnly"
+  },
+  // 向左吐出 (Barf Forward): (a b c) -> (a b) c
+  {
+    "key": "alt+j",
+    "mac": "alt+j",
+    "command": "paredit.barfSexpForward",
+    "when": "editorTextFocus && editorLangId == 'scheme' && !editorReadOnly"
+  },
+  // 脱壳解包 (Splice): (let () (expr)) -> (expr)
+  {
+    "key": "alt+s",
+    "mac": "alt+s",
+    "command": "paredit.spliceSexp",
+    "when": "editorTextFocus && editorLangId == 'scheme' && !editorReadOnly"
+  },
+
+  // --------------------------------------------------------------------
+  // 5. 跨越跳转与穿透 (Alt + F / B / D / U)
+  // --------------------------------------------------------------------
+  // 跨过右侧表达式 (Forward)
+  {
+    "key": "alt+f",
+    "mac": "alt+f",
+    "command": "paredit.forwardSexp",
+    "when": "editorTextFocus && editorLangId == 'scheme' && !editorReadOnly"
+  },
+  // 跨过左侧表达式 (Backward)
+  {
+    "key": "alt+b",
+    "mac": "alt+b",
+    "command": "paredit.backwardSexp",
+    "when": "editorTextFocus && editorLangId == 'scheme' && !editorReadOnly"
+  },
+  // 深度钻入括号最内侧 (Down)
+  {
+    "key": "alt+d",
+    "mac": "alt+d",
+    "command": "paredit.forwardDownSexp",
+    "when": "editorTextFocus && editorLangId == 'scheme' && !editorReadOnly"
+  },
+  // 向上跳出到外层括号 (Up)
+  {
+    "key": "alt+u",
+    "mac": "alt+u",
+    "command": "paredit.backwardUpSexp",
+    "when": "editorTextFocus && editorLangId == 'scheme' && !editorReadOnly"
+  },
+
+  // --------------------------------------------------------------------
+  // 6. 结构删除与缩进 (Alt + Delete / Shift + Enter)
+  // --------------------------------------------------------------------
+  // 向后整块删除子表达式 (Kill Sexp)
+  {
+    "key": "alt+delete",
+    "mac": "alt+delete",
+    "command": "paredit.killSexpForward",
+    "when": "editorTextFocus && editorLangId == 'scheme' && !editorReadOnly"
+  },
+  {
+    "key": "alt+backspace",
+    "mac": "alt+backspace",
+    "command": "paredit.killSexpBackward",
+    "when": "editorTextFocus && editorLangId == 'scheme' && !editorReadOnly"
+  },
+  // 语法树智能格式化缩进 (Indent)
+  {
+    "key": "shift+enter",
+    "mac": "shift+enter",
+    "command": "paredit.indentRange",
+    "when": "editorTextFocus && editorLangId == 'scheme' && !editorReadOnly"
+  },
+
+  // --------------------------------------------------------------------
+  // 7. 高级重构 (Alt + T / /)
+  // --------------------------------------------------------------------
+  // 相邻参数互换对调 (Transpose)
+  {
+    "key": "alt+t",
+    "mac": "alt+t",
+    "command": "paredit.transpose",
+    "when": "editorTextFocus && editorLangId == 'scheme' && !editorReadOnly"
+  },
+  // 列表一切为二 (Split)
+  {
+    "key": "alt+/",
+    "mac": "alt+/",
+    "command": "paredit.splitSexp",
+    "when": "editorTextFocus && editorLangId == 'scheme' && !editorReadOnly"
   }
 ]
