@@ -1,29 +1,15 @@
 
 (require "mcp_help.scm")
 
-;; 1. 全局状态与脏标记（x, y 坐标，用于驱动画面移动）
+;; 全局状态与脏标记（x, y 坐标，用于驱动画面移动）
 (define *visual-version* 0)
 
-(define *next-card-id* 0)
 
-(define (make-card name icon type)
-  (set! *next-card-id* (+ *next-card-id* 1))
-  (hash "id" *next-card-id* "name" name "icon" icon "type" type))
-
-(define *lines*
-  (list
-    (list (make-card "村民" "🧑" "unit")
-          (make-card "浆果" "🍎" "food")
-          (make-card "树木" "🌲" "resource"))
-    (list (make-card "石头" "⛰️" "resource")
-          (make-card "浆果" "🍎" "food")
-          (make-card "浆果" "🍎" "food"))
-    '()
-    '()))
+(require "task0_cards.scm")
+(require "task1_render.scm")
+(require "task2_input.scm")
 
 
-(require "task0_render.scm")
-(require "task1_input.scm")
 
 
 
@@ -49,12 +35,13 @@
       "cols" 80
       "rows" 24
       "screen" (render-all-lines *lines*)
-      "hud" (hash "hp" 100 "max_hp" 100 "gold" 888 "name" (string-append "Player_" (to-string pid)))))
+      "hud" (hash "hp" 100 "max_hp" 100 "gold" 888 "name" (string-append "Player_" (to-string pid))))))
 
 
 
 
- (+ 1 2))
+
+
  
 
  
