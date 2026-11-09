@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Textlands - Lisp Card Flow</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; width: 100vw; height: 100vh;
+      overflow: hidden; background: #07080b; color: #e2e8f0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px; user-select: none;
+    }
+
+    #app {
+      display: flex; flex-direction: column; width: 100vw; height: 100vh;
+      padding: 6px 10px; gap: 6px;
+    }
+
+    /* 极简顶栏：占用空间极小 (18px)，仅展示连接状态与在线信息 */
+    #mini-header {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 11px; color: #718096; flex-shrink: 0; height: 18px;
+    }
+    .header-left, .header-right { display: flex; align-items: center; gap: 10px; }
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #e53e3e; display: inline-block;
+    }
+    .status-dot.connected { background: #38a169; box-shadow: 0 0 6px #38a169; }
+    .status-tag { color: #a0aec0; }
+    .fps-tag { font-variant-numeric: tabular-nums; }
+
+    /* 主游戏视口容器：占据大部分屏幕空间 */
+    #viewport-container {
+      flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
+      background: #0d0f14; border: 1px solid #1a202c; border-radius: 6px;
+      overflow: hidden; position: relative;
+    }
+
+    #screen {
+      margin: 0; padding: 0; white-space: pre; overflow: hidden;
+      line-height: 1.15; font-family: inherit; color: #fff;
+      display: block; letter-spacing: 0px;
+    }
+
+    /* 极简半透明日志面板：占用高度极小，可一键收起折叠 */
+    #log-panel {
+      flex-shrink: 0; background: rgba(13, 16, 23, 0.9);
+      border: 1px solid #1e2638; border-radius: 6px;
+      display: flex; flex-direction: column; overflow: hidden;
+      transition: max-height 0.2s ease; max-height: 96px;
+    }
+    #log-panel.collapsed { max-height: 22px; }
+
+    #log-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 2px 8px; font-size: 11px; color: #718096; background: rgba(22, 27, 34, 0.6);
+      cursor: pointer; height: 20px; flex-shrink: 0;
+    }
+    #log-header:hover { color: #cbd5e0; }
+
+    #log-container {
+      overflow-y: auto; padding: 4px 8px; display: flex; flex-direction: column;
+      gap: 2px; font-size: 11px; line-height: 1.35; flex: 1;
+    }
+    #log-container::-webkit-scrollbar { width: 4px; }
+    #log-container::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 2px; }
+
+    .log-line { word-break: break-all; }
+    .log-tag { color: #63b3ed; margin-right: 6px; font-weight: bold; }
+    .log-tag.combat { color: #f56565; }
+    .log-tag.chat { color: #b794f4; }
+    .log-tag.error { color: #fc8181; }
+
+    /* 底部极简单行指令输入栏 */
+    #input-bar {
+      display: flex; align-items: center; gap: 8px; flex-shrink: 0; height: 34px;
+    }
+    .input-box-wrap {
+      flex: 1; display: flex; align-items: center; background: #0d0f14;
+      border: 1px solid #2d3748; border-radius: 6px; padding: 0 10px;
+      height: 100%; transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .input-box-wrap:focus-within {
+      border-color: #4299e1; box-shadow: 0 0 0 1px #4299e1;
+    }
+    .prompt-label {
+      color: #48bb78; font-weight: bold; margin-right: 8px; font-size: 13px;
+    }
+    #cmd-input {
+      flex: 1; background: transparent; border: none; outline: none;
+      color: #edf2f7; font-family: inherit; font-size: 12px; height: 100%;
+    }
+    #cmd-input::placeholder { color: #4a5568; }
+
+    .btn {
+      background: #1a202c; color: #cbd5e0; border: 1px solid #2d3748;
+      border-radius: 6px; padding: 0 12px; height: 100%; cursor: pointer;
+      font-family: inherit; font-size: 11px; font-weight: 500;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s ease;
+    }
+    .btn:hover { background: #2b3548; color: #fff; border-color: #4a5568; }
+    .btn-send { background: #1e3a5f; border-color: #2b6cb0; color: #ebf8ff; }
+    .btn-send:hover { background: #2b6cb0; border-color: #4299e1; }
+    .btn-icon { padding: 0 6px; height: 18px; font-size: 10px; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 极简顶栏 -->
+    <header id="mini-header">
+      <div class="header-left">
+        <span class="status-dot" id="conn-dot"></span>
+        <span id="conn-text" class="status-tag">连接中...</span>
+        <span id="player-title" style="color: #cbd5e0; font-weight: 600;">Player</span>
+      </div>
+      <div class="header-right">
+        <span class="status-tag">FPS: <span id="fps-val" class="fps-tag">0</span></span>
+        <span class="status-tag" style="opacity: 0.6">按 [ : ] 快速输入</span>
+      </div>
+    </header>
+
+    <!-- 游戏核心字符流视口 (占据最大视区) -->
+    <main id="viewport-container">
+      <pre id="screen">正在初始化 Textlands 字符终端...</pre>
+    </main>
+
+    <!-- 极简消息日志 (高度约 80px，支持折叠) -->
+    <section id="log-panel">
+      <div id="log-header">
+        <span>系统与事件日志</span>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <button class="btn btn-icon" id="clear-log-btn" title="清空日志">清空</button>
+          <button class="btn btn-icon" id="toggle-log-btn" title="折叠/展开日志">折叠</button>
+        </div>
+      </div>
+      <div id="log-container"></div>
+    </section>
+
+    <!-- 底部指令输入栏 -->
+    <footer id="input-bar">
+      <div class="input-box-wrap">
+        <span class="prompt-label">&gt;</span>
+        <input type="text" id="cmd-input" placeholder="输入指令 (如: m 0 1, mh 0 1, c 0, eat 1, buy tree, help...) 按回车发送" autocomplete="off" spellcheck="false" />
+      </div>
+      <button class="btn btn-send" id="cmd-send-btn">发送</button>
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      /* ======================================================================
+         1. Core Transport & Interaction SDK (window.TextCraft)
+         ====================================================================== */
+      let ws = null;
+      let pingInterval = null;
+      let reconnectTimer = null;
+      let reconnectAttempts = 0;
+      let currentCols = 80;
+      let currentRows = 24;
+      let frameCount = 0;
+      let lastFpsTime = performance.now();
+
+      const hudListeners = [];
+      const eventListeners = [];
+      const screenEl = document.getElementById('screen');
+      const viewportEl = document.getElementById('viewport-container');
+      const connDotEl = document.getElementById('conn-dot');
+      const connTextEl = document.getElementById('conn-text');
+      const fpsValEl = document.getElementById('fps-val');
+      const playerTitleEl = document.getElementById('player-title');
+      const logContainerEl = document.getElementById('log-container');
+      const logPanelEl = document.getElementById('log-panel');
+      const toggleLogBtn = document.getElementById('toggle-log-btn');
+      const clearLogBtn = document.getElementById('clear-log-btn');
+      const cmdInputEl = document.getElementById('cmd-input');
+      const cmdSendBtn = document.getElementById('cmd-send-btn');
+
+      // 命令历史记录
+      const cmdHistory = [];
+      let historyIndex = -1;
+
+      function blurFocus() {
+        if (document.activeElement && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+          document.activeElement.blur();
+        }
+      }
+
+      function sendRaw(envelope) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(envelope));
+        }
+      }
+
+      const TextCraft = {
+        sendAction(action, payload = null) {
+          sendRaw({ Command: { Input: { type: 'ui', action: String(action), payload: payload } } });
+          blurFocus();
+        },
+        sendCmd(input) {
+          const text = String(input || '').trim();
+          if (text.length > 0) {
+            sendRaw({ Command: { Input: { type: 'cmd', input: text } } });
+            // 添加到历史记录
+            if (cmdHistory[cmdHistory.length - 1] !== text) {
+              cmdHistory.push(text);
+              if (cmdHistory.length > 50) cmdHistory.shift();
+            }
+            historyIndex = -1;
+          }
+          blurFocus();
+        },
+        sendKey(code, mods = {}) {
+          sendRaw({
+            Command: {
+              Input: {
+                type: 'key',
+                code: String(code),
+                shift: Boolean(mods.shift),
+                ctrl: Boolean(mods.ctrl),
+                alt: Boolean(mods.alt),
+                action: mods.action || 'down'
+              }
+            }
+          });
+        },
+        onHud(fn) {
+          if (typeof fn === 'function') hudListeners.push(fn);
+        },
+        onEvent(fn) {
+          if (typeof fn === 'function') eventListeners.push(fn);
+        },
+        blurFocus,
+        parseAnsi
+      };
+      window.TextCraft = TextCraft;
+
+      /* ======================================================================
+         2. Viewport Scaler & Micro-ANSI Parser
+         ====================================================================== */
+      function updateScreenFontSize(cols, rows) {
+        currentCols = cols || currentCols || 80;
+        currentRows = rows || currentRows || 24;
+        const rect = viewportEl.getBoundingClientRect();
+        const availableW = rect.width * 0.96;
+        const availableH = rect.height * 0.94;
+        const fontSize = Math.min(availableW / (currentCols * 0.61), availableH / (currentRows * 1.2));
+        screenEl.style.fontSize = `${Math.max(9, Math.floor(fontSize))}px`;
+      }
+      window.addEventListener('resize', () => updateScreenFontSize(currentCols, currentRows));
+
+      const STD_COLORS = [
+        '#000000', '#cd3131', '#0dbc79', '#e5e510', '#2472c8', '#bc3fbc', '#11a8cd', '#e5e5e5',
+        '#666666', '#f14c4c', '#23d18b', '#f5f543', '#3b8eea', '#d670d6', '#29b8db', '#ffffff'
+      ];
+
+      function escapeHtml(str) {
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+
+      function parseAnsi(text) {
+        if (!text) return '';
+        const regex = /\x1b\[([?0-9;:]*)([A-Za-z])/g;
+        let html = '', lastIndex = 0, fg = null, bg = null, bold = false, spanOpen = false;
+
+        function flushSpan() {
+          if (spanOpen) { html += '</span>'; spanOpen = false; }
+          const styles = [];
+          if (fg) styles.push('color:' + fg);
+          if (bg) styles.push('background:' + bg);
+          if (bold) styles.push('font-weight:bold');
+          if (styles.length > 0) {
+            html += `<span style="${styles.join(';')}">`;
+            spanOpen = true;
+          }
+        }
+
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+          if (match.index > lastIndex) html += escapeHtml(text.slice(lastIndex, match.index));
+          lastIndex = match.index + match[0].length;
+          if (match[2] === 'm') {
+            const params = match[1] === '' ? [0] : match[1].replace(/:/g, ';').split(';').map(s => Number(s || 0));
+            for (let i = 0; i < params.length; i++) {
+              const c = params[i];
+              if (c === 0) { fg = null; bg = null; bold = false; }
+              else if (c === 1) bold = true;
+              else if (c === 22) bold = false;
+              else if (c >= 30 && c <= 37) fg = STD_COLORS[c - 30];
+              else if (c === 39) fg = null;
+              else if (c >= 40 && c <= 47) bg = STD_COLORS[c - 40];
+              else if (c === 49) bg = null;
+              else if (c >= 90 && c <= 97) fg = STD_COLORS[c - 90 + 8];
+              else if (c >= 100 && c <= 107) bg = STD_COLORS[c - 100 + 8];
+              else if (c === 38 && params[i + 1] === 2 && i + 4 < params.length) {
+                fg = `rgb(${params[i + 2]},${params[i + 3]},${params[i + 4]})`; i += 4;
+              } else if (c === 48 && params[i + 1] === 2 && i + 4 < params.length) {
+                bg = `rgb(${params[i + 2]},${params[i + 3]},${params[i + 4]})`; i += 4;
+              }
+            }
+            flushSpan();
+          }
+        }
+        if (lastIndex < text.length) html += escapeHtml(text.slice(lastIndex));
+        if (spanOpen) html += '</span>';
+        return html;
+      }
+
+      /* ======================================================================
+         3. Client Identity Routing & WebSocket Loop
+         ====================================================================== */
+      function resolveClientIdentity() {
+        let username = '';
+        let token = '';
+        let fromUrl = false;
+
+        const rawHash = (window.location.hash || '').replace(/^#\/?/, '').trim();
+        if (rawHash) {
+          const parts = rawHash.split('/');
+          username = decodeURIComponent(parts[0] || '').trim();
+          token = decodeURIComponent(parts.slice(1).join('/') || '').trim();
+          fromUrl = true;
+        }
+
+        if (!fromUrl) {
+          try {
+            let savedUser = localStorage.getItem('textcraft_user');
+            if (!savedUser) {
+              savedUser = 'Hero_' + Math.random().toString(36).substring(2, 6);
+              localStorage.setItem('textcraft_user', savedUser);
+            }
+            username = savedUser;
+            token = localStorage.getItem('textcraft_token') || '';
+          } catch (_) {
+            username = 'Hero_' + Math.random().toString(36).substring(2, 6);
+            token = '';
+          }
+        }
+        const handshakeToken = username ? `${username}:${token}` : token;
+        return { username, token, handshakeToken, fromUrl };
+      }
+
+      let clientIdentity = resolveClientIdentity();
+      if (clientIdentity.username && playerTitleEl) {
+        playerTitleEl.textContent = clientIdentity.username;
+      }
+
+      function sendPing() {
+        sendRaw({ Ping: { client_time_ms: Date.now() } });
+      }
+
+      function startHeartbeat() {
+        if (pingInterval) clearInterval(pingInterval);
+        pingInterval = setInterval(() => sendPing(), 3000);
+      }
+
+      function connectWebSocket() {
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+          ws.onclose = null;
+          ws.close();
+        }
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host || 'localhost:8081';
+        const token = clientIdentity.handshakeToken;
+        connDotEl.className = 'status-dot';
+        connTextEl.textContent = '连接中...';
+
+        try {
+          ws = new WebSocket(`${protocol}//${host}/ws?token=${encodeURIComponent(token)}`);
+        } catch (_) {
+          scheduleReconnect();
+          return;
+        }
+
+        ws.onopen = () => {
+          reconnectAttempts = 0;
+          connDotEl.className = 'status-dot connected';
+          connTextEl.textContent = '已连接';
+          sendRaw({ Auth: { token: token, client_version: '3.0.0' } });
+          sendPing();
+          startHeartbeat();
+        };
+
+        ws.onmessage = (ev) => {
+          try {
+            const raw = JSON.parse(ev.data);
+            if (raw.Pong || raw.AuthSuccess) return;
+            const data = raw.Snapshot || raw.Event || raw;
+
+            if (data.screen !== undefined) {
+              screenEl.innerHTML = parseAnsi(data.screen);
+              if (data.cols !== currentCols || data.rows !== currentRows) {
+                updateScreenFontSize(data.cols, data.rows);
+              }
+              if (data.hud) {
+                for (let i = 0; i < hudListeners.length; i++) hudListeners[i](data.hud, data);
+              }
+              frameCount++;
+              const now = performance.now();
+              if (now - lastFpsTime >= 1000) {
+                fpsValEl.textContent = Math.round((frameCount * 1000) / (now - lastFpsTime));
+                frameCount = 0;
+                lastFpsTime = now;
+              }
+            } else if (data.event) {
+              for (let i = 0; i < eventListeners.length; i++) eventListeners[i](data);
+            }
+          } catch (e) {
+            console.error('WS error:', e);
+          }
+        };
+
+        ws.onclose = () => {
+          if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
+          connDotEl.className = 'status-dot';
+          connTextEl.textContent = '重连中...';
+          scheduleReconnect();
+        };
+      }
+
+      function scheduleReconnect() {
+        if (reconnectTimer) return;
+        reconnectAttempts++;
+        const delay = Math.min(1000 * Math.pow(1.3, reconnectAttempts - 1), 4000);
+        reconnectTimer = setTimeout(() => { reconnectTimer = null; connectWebSocket(); }, delay);
+      }
+
+      /* ======================================================================
+         4. Minimal Log Stream & Input Pipeline
+         ====================================================================== */
+      let lastHudLogs = [];
+
+      function appendLog(channel, text) {
+        const div = document.createElement('div');
+        div.className = 'log-line';
+        const tagClass = channel === 'combat' ? 'log-tag combat' : (channel === 'chat' ? 'log-tag chat' : (channel === 'error' ? 'log-tag error' : 'log-tag'));
+        div.innerHTML = `<span class="${tagClass}">[${escapeHtml(channel || '系统')}]</span>${escapeHtml(String(text || ''))}`;
+        logContainerEl.appendChild(div);
+        while (logContainerEl.children.length > 80) {
+          logContainerEl.removeChild(logContainerEl.firstElementChild);
+        }
+        logContainerEl.scrollTop = logContainerEl.scrollHeight;
+      }
+
+      function syncLogs(logs) {
+        if (!logs || logs.length === 0) return;
+        let startIdx = 0;
+        if (lastHudLogs.length > 0) {
+          const lastItem = lastHudLogs[lastHudLogs.length - 1];
+          for (let i = logs.length - 1; i >= 0; i--) {
+            if (logs[i].channel === lastItem.channel && logs[i].text === lastItem.text) {
+              startIdx = i + 1;
+              break;
+            }
+          }
+        }
+        for (let i = startIdx; i < logs.length; i++) {
+          appendLog(logs[i].channel, logs[i].text);
+        }
+        lastHudLogs = logs.slice();
+      }
+
+      TextCraft.onHud((hud) => {
+        if (hud.name) playerTitleEl.textContent = hud.name;
+        if (Array.isArray(hud.logs)) {
+          syncLogs(hud.logs);
+        }
+      });
+
+      TextCraft.onEvent((ev) => {
+        if (ev.event === 'Welcome') appendLog('系统', ev.message);
+        else if (ev.event === 'Message') appendLog(ev.channel || '系统', ev.text);
+        else if (ev.event === 'Error') appendLog('错误', ev.text);
+      });
+
+      // 发送指令
+      function doSend() {
+        const val = cmdInputEl.value;
+        TextCraft.sendCmd(val);
+        cmdInputEl.value = '';
+        cmdInputEl.focus();
+      }
+
+      cmdSendBtn.addEventListener('click', doSend);
+
+      // 折叠/展开日志面板
+      let isLogCollapsed = false;
+      toggleLogBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        isLogCollapsed = !isLogCollapsed;
+        logPanelEl.classList.toggle('collapsed', isLogCollapsed);
+        toggleLogBtn.textContent = isLogCollapsed ? '展开' : '折叠';
+        setTimeout(() => updateScreenFontSize(currentCols, currentRows), 220);
+      });
+
+      // 清空日志
+      clearLogBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        logContainerEl.innerHTML = '';
+        lastHudLogs = [];
+      });
+
+      // 键盘快捷与历史记录导航
+      cmdInputEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          doSend();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          cmdInputEl.blur();
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (cmdHistory.length > 0) {
+            if (historyIndex === -1) historyIndex = cmdHistory.length - 1;
+            else if (historyIndex > 0) historyIndex--;
+            cmdInputEl.value = cmdHistory[historyIndex] || '';
+          }
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (historyIndex !== -1) {
+            if (historyIndex < cmdHistory.length - 1) {
+              historyIndex++;
+              cmdInputEl.value = cmdHistory[historyIndex] || '';
+            } else {
+              historyIndex = -1;
+              cmdInputEl.value = '';
+            }
+          }
+        }
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if (document.activeElement === cmdInputEl) return;
+        // 按 ':' 或 '/' 键直达命令行
+        if (e.key === ':' || e.key === '/') {
+          e.preventDefault();
+          cmdInputEl.focus();
+          return;
+        }
+      });
+
+      updateScreenFontSize(80, 24);
+      connectWebSocket();
+    })();
+  </script>
+</body>
+</html>

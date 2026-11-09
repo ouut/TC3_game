@@ -47,8 +47,8 @@ flowchart TD
 
 1. **纯数据世界状态（Pure Data Only）**：
    全局世界状态保存在 `*world-state*` 哈希表中。其中所有数据必须为**可 JSON 序列化的纯数据**（哈希表、列表、整数、浮点数、字符串、布尔值）。**严禁在 `*world-state*` 中存储 Lambda 闭包或函数引用**，以保障热重载状态恢复与磁盘存档 100% 成功。
-2. **脏版本标记（Dirty Version Tracking）**：
-   引擎内置 `*visual-version*` 计数器。任何修改地图瓦片、玩家属性或双宽模式的操作都会调用 `(bump-visual-version!)`。当版本未变且未到心跳周期时，Rust 宿主会**直接跳过 `render-snapshot` 光栅化**（静止帧开销 `< 0.05ms`）。如果你直接通过 `set!` 修改了影响画面的自定义全局状态，请务必调用 `(bump-visual-version!)`。
+2. **脏标记只读检测（Scheme-Authoritative Dirty Check）**：
+   快照脏检测完全由 Scheme 权威自治。`scripts/main.scm` 中的 `(engine:render-snapshot pid)` 在玩家视口与 HUD 未发生变化时直接返回 `#f`（类似 HTTP 304 Not Modified），彻底省去昂贵的 ANSI 视口光栅化与哈希计算开销；当玩家移动、受到伤害、或者周围世界发生变更时，Scheme 自动标记脏状态并生成最新的 `Snapshot` 字典返回。Rust 宿主在收到 `#f` 时零计算跳过本帧网络推流，或在心跳超时时使用已缓存的快照保活重发。
 3. **分层瓦片与 ANSI RLE 光栅化**：
    世界分为 4 个渲染图层：`terrain`（底层地形）、`surface`（地表物品/设施）、`actor`（生物/NPC/其他玩家）、`overlay`（顶层特效）。`render-viewport-ansi` 会自动合并同行连续相同颜色的 ANSI 转义码（RLE 压缩），大幅降低网络带宽与 DOM 解析开销。
 4. **前后端纯数据契约（Pure JSON HUD Contract）**：
@@ -104,14 +104,20 @@ Steel 中的哈希表是不可变持久化数据结构（`hash-insert` 与 `hash
 
 ### 2.2 Rust 宿主注入函数 (Host Functions)
 
-Rust 宿主在 Scheme 全局环境中注册了 4 个原生函数，任何脚本可直接调用：
+Rust 宿主在 Scheme 全局环境中注册了核心系统函数，任何脚本可直接调用：
 
 | 宿主函数签名 | 参数说明 | 职责与效果 |
 | :--- | :--- | :--- |
 | `(engine:send-message pid channel text)` | `pid`: 玩家整数 ID<br>`channel`: 通道名（如 `"system"`, `"combat"`, `"chat"`）<br>`text`: 消息文本 | 向指定在线玩家推送一条独立的 `TextCraftEvent::Message` 事件帧 |
 | `(engine:broadcast channel text)` | `channel`: 通道名<br>`text`: 消息文本 | 向全服所有在线玩家广播一条 `TextCraftEvent::Message` 事件帧 |
 | `(engine:log text)` | `text`: 日志内容 | 输出到服务端 `tracing` 标准日志（target: `"scheme"`） |
-| `(engine:random-int lo hi)` | `lo`, `hi`: 整数边界 | 生成 `[lo, hi]` 闭区间内的均匀伪随机整数 |
+| `(engine:random-int lo hi [seed])` | `lo`, `hi`: 整数边界<br>`seed` (可选): 64位整型随机种子 | 生成 `[lo, hi]` 闭区间内的均匀伪随机整数；若指定 `seed`，则进入确定性随机序列 |
+| `(engine:raw-random-int lo hi [seed])` | 同上 | 宿主底层 PRNG 原语调用 |
+| `(mcp:store-set [namespace] key val)` | `namespace` (可选): 命名空间<br>`key`: 字符串键名<br>`val`: 任意纯数据对象 | 写入 Rust 专用 MCP 智能体存储（Blackboard），零污染游戏业务状态与存档 |
+| `(mcp:store-get [namespace] key)` | `namespace` (可选)<br>`key`: 键名 | 从专用 MCP 存储中读取数据项（若不存在返回 `#f`） |
+| `(mcp:store-delete [namespace] key)` | `namespace` (可选)<br>`key`: 键名 | 从专用 MCP 存储中删除指定数据项 |
+| `(mcp:store-list [namespace])` | `namespace` (可选) | 获取指定命名空间下的所有键名列表 |
+| `(mcp:store-clear [namespace])` | `namespace` (可选) | 清空指定命名空间下的所有 MCP 存储数据 |
 
 ---
 
@@ -154,6 +160,9 @@ Rust 宿主在 Scheme 全局环境中注册了 4 个原生函数，任何脚本�
   "identity_key" "alice"   ;; 角色唯一身份与 saved_players 存档归档 Key (优先取 username)
   "name" "alice"           ;; 角色显示名称 (同步至 HUD 顶部状态栏)
   "online" #t              ;; 显式在线状态位 (#t 在线 / #f 断线宽限期挂起，用于过滤渲染与怪物索敌)
+  "dirty" #t               ;; 视口与 HUD 脏标记位 (由 Scheme 权威控制是否重新生成快照)
+  "last_rendered_ver" 0    ;; 上次完成快照渲染时的世界脏版本号
+  "pressed_keys" (hash)    ;; 键盘按键长按状态跟踪字典: code-string -> press-tick
   "theme" "cyberpunk"      ;; 玩家主题偏好
   "double_width" #f        ;; 玩家个人双宽字符模式开关 (#t / #f)
   "x" 0                    ;; 世界 X 坐标 (整数)
@@ -170,7 +179,8 @@ Rust 宿主在 Scheme 全局环境中注册了 4 个原生函数，任何脚本�
                 (hash "id" "sword" "name" "铁剑" "icon" "⚔️" "count" 1)
                 (hash "id" "potion" "name" "生命药水" "icon" "🧪" "count" 3))
   "dialog" #f              ;; 当前弹窗对象 (hash "title" ... "text" ... "options" ...) 或 #f
-  "logs" (list ...)        ;; 玩家最近 30 条日志列表
+  "logs" (list             ;; 玩家最近 30 条日志列表 (自动附加精确帧号 tick)
+           (hash "channel" "system" "text" "欢迎！" "tick" 105))
   "last_action_tick" 0)
 ```
 
@@ -228,6 +238,30 @@ Rust 宿主在 Scheme 全局环境中注册了 4 个原生函数，任何脚本�
 
 ;; 手动标记画面或 HUD 已变更，通知宿主下一帧重新生成快照
 (bump-visual-version!)
+
+;; 手动将指定玩家视口标记为脏，强制下一帧重新光栅化
+(player:mark-dirty! player-id)
+```
+
+#### 4. 连续按键、确定性随机与 TDD 断言 API
+```scheme
+;; 检查玩家当前是否按住了指定按键 (code 如 "KeyW", "KeyD")
+(player:key-pressed? player-id code)
+
+;; 查询玩家按住某按键的累计帧数 (tick 数量)
+(player:key-hold-ticks player-id code)
+
+;; 设置确定性伪随机数种子 (消除单元测试 Flaky 抖动)
+(random:seed! 12345)
+
+;; 重置伪随机数种子，恢复宿主硬件随机熵
+(random:reset!)
+
+;; TDD 富差值断言：当实际值不等于期望值时返回带 expected/actual 的结构化错误标记
+(assert:equal actual expected)
+
+;; TDD 条件断言：当 cond 不为真时返回失败标记
+(assert:true cond)
 ```
 
 ---
@@ -250,7 +284,7 @@ Rust 宿主在 Scheme 全局环境中注册了 4 个原生函数，任何脚本�
 | `(engine:on-input pid input-map)` | 主循环第 3/4 阶段 | 处理键盘按键（`"type": "key"`）与视口鼠标点击（`"type": "mouse"`），重置空闲计时器 |
 | `(engine:on-ui-action pid action-map)`| 主循环第 3/4 阶段 | 处理前端 HUD 发送的交互动作（如 `"use_item"`, `"buy_potion"`, `"close_dialog"`, `"clear_logs"`） |
 | `(engine:on-command pid datum raw)` | 主循环第 4 阶段 | 处理玩家输入的控制台命令（`datum` 已由宿主安全 Reader 预解析为 S-表达式，零代码注入风险） |
-| `(engine:render-snapshot pid)` | 主循环第 7 阶段 | 返回 `(hash "screen" ansi-str "cols" cols "rows" rows "hud" hud-map)` |
+| `(engine:render-snapshot pid)` | 主循环第 7 阶段 | Scheme 权威快照生成与脏检测。未变脏返回 `#f`（跳过光栅化），变脏时返回 `(hash "screen" ansi-str "cols" cols "rows" rows "hud" hud-map)` |
 | `(engine:export-state)` | 自动存档/热重载前 | 返回 `*world-state*` |
 | `(engine:import-state data)` | 启动读档/热重载后 | 将 `data` 恢复至 `*world-state*` 并调用 `(bump-visual-version!)` |
 
@@ -263,7 +297,7 @@ Rust 宿主在 Scheme 全局环境中注册了 4 个原生函数，任何脚本�
 服务端通过 WebSocket 发送两类数据包：
 
 #### 1. 状态快照信封 (`Snapshot`)
-当 `*visual-version*` 发生变更且结构化 Hash 变化（或到达 `--snapshot-heartbeat-ms` 保活周期）时推送：
+当 Scheme 检测到视口或 HUD 变脏并返回新快照时立即推送（若未变脏返回 `#f`，则在达到 `--snapshot-heartbeat-ms` 保活周期时使用缓存重发）：
 ```json
 {
   "Snapshot": {
